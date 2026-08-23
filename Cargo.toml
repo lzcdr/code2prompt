@@ -1,0 +1,12 @@
+[package]
+name = "code2prompt"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rustyline = "13.0.0"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+ignore = "0.4"
+dirs = "5.0"
+glob = "0.3"
