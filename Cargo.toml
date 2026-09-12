@@ -10,3 +10,6 @@ toml = "0.8"
 ignore = "0.4"
 dirs = "5.0"
 glob = "0.3"
+zip = "2"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+

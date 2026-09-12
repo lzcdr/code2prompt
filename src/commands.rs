@@ -7,6 +7,7 @@ pub enum Command {
     List,
     Show,
     Copy,
+    SaveSplit(Vec<String>),
     Stats,
     Help,
     Exit,
@@ -24,6 +25,7 @@ pub fn parse_line(line: &str) -> Command {
         "list" | "ls" => Command::List,
         "show" => Command::Show,
         "copy" | "cp" => Command::Copy,
+        "savesplit" => Command::SaveSplit(args),
         "stats" | "stat" => Command::Stats,
         "help" | "h" => Command::Help,
         "exit" | "quit" | "q" => Command::Exit,
@@ -41,6 +43,11 @@ pub fn execute_command(ctx: &mut Context, cmd: Command) -> bool {
         Command::List => ctx.list(),
         Command::Show => ctx.show(),
         Command::Copy => ctx.copy_to_clipboard(),
+        Command::SaveSplit(args) if args.len() != 1 => eprintln!("Usage: savesplit <KB>"),
+        Command::SaveSplit(args) => match args[0].parse::<usize>() {
+            Ok(kb) if kb > 0 => ctx.save_split(kb),
+            _ => eprintln!("Usage: savesplit <KB> (must be a positive integer)"),
+        },
         Command::Stats => ctx.stats(),
         Command::Help => print_help(),
         Command::Exit => return false,
@@ -50,14 +57,17 @@ pub fn execute_command(ctx: &mut Context, cmd: Command) -> bool {
 }
 
 fn print_help() {
-    println!(r#"Commands:
+    println!(
+        r#"Commands:
   add <path...>     - Add files / directories / globs (respects .c2pignore)
   remove <path...>  - Remove files from context
   clear             - Clear all files (asks confirmation unless --force)
   list (ls)         - Show files in context
   show              - Print context using template
   copy (cp)         - Copy context to clipboard
+  savesplit <KB>    - Save context split by file boundaries into <KB> KB parts, as a zip in Downloads system directory
   stats             - Show summary (file count, total size)
   help (h)          - This help
-  exit (quit/q)     - Exit"#);
+  exit (quit/q)     - Exit"#
+    );
 }

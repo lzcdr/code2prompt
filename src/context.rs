@@ -1,7 +1,7 @@
+use crate::config::Config;
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-use crate::config::Config;
 
 pub struct FileEntry {
     pub path: PathBuf,
@@ -17,7 +17,11 @@ pub struct Context {
 
 impl Context {
     pub fn new(config: Config, force: bool) -> Self {
-        Context { files: HashMap::new(), force, config }
+        Context {
+            files: HashMap::new(),
+            force,
+            config,
+        }
     }
 
     pub fn add_files(&mut self, raw_paths: &[String]) {
@@ -25,21 +29,35 @@ impl Context {
         for abs_path in paths {
             let metadata = match std::fs::metadata(&abs_path) {
                 Ok(m) => m,
-                Err(e) => { eprintln!("Error reading {}: {e}", abs_path.display()); continue; }
+                Err(e) => {
+                    eprintln!("Error reading {}: {e}", abs_path.display());
+                    continue;
+                }
             };
             if let Some(max) = self.config.max_file_size {
                 if metadata.len() > max {
-                    eprintln!("Skipping {} (size {} > max {})", abs_path.display(), metadata.len(), max);
+                    eprintln!(
+                        "Skipping {} (size {} > max {})",
+                        abs_path.display(),
+                        metadata.len(),
+                        max
+                    );
                     continue;
                 }
             }
             let mut content = String::new();
-            if let Err(e) = std::fs::File::open(&abs_path).and_then(|mut f| f.read_to_string(&mut content)) {
+            if let Err(e) =
+                std::fs::File::open(&abs_path).and_then(|mut f| f.read_to_string(&mut content))
+            {
                 eprintln!("Error reading {}: {e}", abs_path.display());
                 continue;
             }
             let size = content.len();
-            let entry = FileEntry { path: abs_path.clone(), content, size };
+            let entry = FileEntry {
+                path: abs_path.clone(),
+                content,
+                size,
+            };
             if self.files.insert(abs_path.clone(), entry).is_some() {
                 println!("Updated {}", abs_path.display());
             } else {
@@ -105,20 +123,34 @@ impl Context {
         for (i, entry) in entries.iter().enumerate() {
             let disp = entry.path.display().to_string();
             let truncated = if disp.len() > 60 {
-                format!("...{}", &disp[disp.len()-57..])
-            } else { disp };
-            println!("{0: <5} {1: <60} {2: >10}", i+1, truncated, format_size(entry.size));
+                format!("...{}", &disp[disp.len() - 57..])
+            } else {
+                disp
+            };
+            println!(
+                "{0: <5} {1: <60} {2: >10}",
+                i + 1,
+                truncated,
+                format_size(entry.size)
+            );
         }
     }
 
     pub fn build_output(&self) -> String {
-        let template = self.config.template.as_deref().unwrap_or("--- {{path}} ---\n{{content}}\n\n");
+        let template = self
+            .config
+            .template
+            .as_deref()
+            .unwrap_or("--- {{path}} ---\n{{content}}\n\n");
         let mut entries: Vec<&FileEntry> = self.files.values().collect();
         entries.sort_by_key(|e| &e.path);
         let mut out = String::new();
         for entry in entries {
-            out.push_str(&template.replace("{{path}}", &entry.path.display().to_string())
-                                .replace("{{content}}", &entry.content));
+            out.push_str(
+                &template
+                    .replace("{{path}}", &entry.path.display().to_string())
+                    .replace("{{content}}", &entry.content),
+            );
         }
         out
     }
@@ -143,6 +175,93 @@ impl Context {
             Ok(()) => println!("Context copied to clipboard."),
             Err(e) => eprintln!("Clipboard error: {e}"),
         }
+    }
+
+    pub fn save_split(&self, kb: usize) {
+        if self.files.is_empty() {
+            println!("Context is empty.");
+            return;
+        }
+
+        let downloads = match dirs::download_dir() {
+            Some(d) => d,
+            None => {
+                eprintln!("Cannot locate the system Downloads directory.");
+                return;
+            }
+        };
+
+        let max_bytes = kb * 1024;
+        let template = self
+            .config
+            .template
+            .as_deref()
+            .unwrap_or("--- {{path}} ---\n{{content}}\n\n");
+
+        let mut entries: Vec<&FileEntry> = self.files.values().collect();
+        entries.sort_by_key(|e| &e.path);
+
+        // Режем по границам файлов: часть набирается, пока очередной
+        // файл в неё влезает; иначе начинается новая часть.
+        let mut parts: Vec<String> = Vec::new();
+        let mut current = String::new();
+        for entry in entries {
+            let piece = template
+                .replace("{{path}}", &entry.path.display().to_string())
+                .replace("{{content}}", &entry.content);
+
+            if piece.len() > max_bytes {
+                eprintln!(
+                    "Note: {} is {} bytes, larger than {} KB; it forms its own part.",
+                    entry.path.display(),
+                    piece.len(),
+                    kb
+                );
+            }
+
+            if !current.is_empty() && current.len() + piece.len() > max_bytes {
+                parts.push(std::mem::take(&mut current));
+            }
+            current.push_str(&piece);
+        }
+        if !current.is_empty() {
+            parts.push(current);
+        }
+
+        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+        let zip_name = format!("code2prompt_{timestamp}.zip");
+        let zip_path = downloads.join(&zip_name);
+
+        let file = match std::fs::File::create(&zip_path) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("Cannot create {}: {e}", zip_path.display());
+                return;
+            }
+        };
+
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+
+        for (i, part) in parts.iter().enumerate() {
+            let part_name = format!("part_{:03}.txt", i + 1);
+            if let Err(e) = zip.start_file(&part_name, options) {
+                eprintln!("zip error: {e}");
+                return;
+            }
+            if let Err(e) = zip.write_all(part.as_bytes()) {
+                eprintln!("zip write error: {e}");
+                return;
+            }
+        }
+
+        if let Err(e) = zip.finish() {
+            eprintln!("zip finish error: {e}");
+            return;
+        }
+
+        println!("Saved {} part(s) to {}", parts.len(), zip_path.display());
     }
 }
 
