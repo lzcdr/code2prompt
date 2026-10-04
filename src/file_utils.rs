@@ -6,7 +6,7 @@ pub fn expand_paths(inputs: &[String]) -> Vec<PathBuf> {
     for input in inputs {
         let path = Path::new(input);
         if path.is_file() {
-            if let Ok(abs) = path.canonicalize() {
+            if let Ok(abs) = dunce::canonicalize(path) {
                 files.push(abs);
             }
             continue;
@@ -19,7 +19,7 @@ pub fn expand_paths(inputs: &[String]) -> Vec<PathBuf> {
             for result in walker {
                 if let Ok(entry) = result {
                     if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
-                        if let Ok(abs) = entry.path().canonicalize() {
+                        if let Ok(abs) = dunce::canonicalize(entry.path()) {
                             files.push(abs);
                         }
                     }
@@ -38,7 +38,7 @@ pub fn expand_paths(inputs: &[String]) -> Vec<PathBuf> {
                     if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
                         let relative = entry.path().strip_prefix(".").unwrap_or(entry.path());
                         if pattern.matches_path(relative) {
-                            if let Ok(abs) = entry.path().canonicalize() {
+                            if let Ok(abs) = dunce::canonicalize(entry.path()) {
                                 files.push(abs);
                             }
                         }
