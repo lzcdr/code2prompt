@@ -46,11 +46,16 @@ impl Context {
                 }
             }
             let mut content = String::new();
-            if let Err(e) =
-                std::fs::File::open(&abs_path).and_then(|mut f| f.read_to_string(&mut content))
-            {
-                eprintln!("Error reading {}: {e}", abs_path.display());
-                continue;
+            match std::fs::File::open(&abs_path).and_then(|mut f| f.read_to_string(&mut content)) {
+                Ok(_) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
+                    eprintln!("Skipping {} (binary / not valid UTF-8)", abs_path.display());
+                    continue;
+                }
+                Err(e) => {
+                    eprintln!("Error reading {}: {e}", abs_path.display());
+                    continue;
+                }
             }
             let size = content.len();
             let entry = FileEntry {
@@ -122,11 +127,7 @@ impl Context {
         println!("{0: <5} {1: <60} {2: >10}", "#", "File", "Size");
         for (i, entry) in entries.iter().enumerate() {
             let disp = entry.path.display().to_string();
-            let truncated = if disp.len() > 60 {
-                format!("...{}", &disp[disp.len() - 57..])
-            } else {
-                disp
-            };
+            let truncated = truncate_left(&disp, 60);
             println!(
                 "{0: <5} {1: <60} {2: >10}",
                 i + 1,
@@ -191,7 +192,13 @@ impl Context {
             }
         };
 
-        let max_bytes = kb * 1024;
+        let max_bytes = match kb.checked_mul(1024) {
+            Some(n) => n,
+            None => {
+                eprintln!("savesplit: {kb} KB is too large (size overflow).");
+                return;
+            }
+        };
         let template = self
             .config
             .template
@@ -273,4 +280,15 @@ fn format_size(bytes: usize) -> String {
     } else {
         format!("{bytes} B")
     }
+}
+
+fn truncate_left(s: &str, max_chars: usize) -> String {
+    let count = s.chars().count();
+    if count <= max_chars {
+        return s.to_string();
+    }
+    let keep = max_chars.saturating_sub(3);
+    let skip = count - keep;
+    let tail: String = s.chars().skip(skip).collect();
+    format!("...{tail}")
 }

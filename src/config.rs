@@ -2,6 +2,7 @@ use serde::Deserialize;
 use std::path::PathBuf;
 
 #[derive(Deserialize, Debug, Clone)]
+#[serde(default)]
 pub struct Config {
     pub template: Option<String>,
     pub max_file_size: Option<u64>,

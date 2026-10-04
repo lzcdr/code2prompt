@@ -45,8 +45,9 @@ pub fn execute_command(ctx: &mut Context, cmd: Command) -> bool {
         Command::Copy => ctx.copy_to_clipboard(),
         Command::SaveSplit(args) if args.len() != 1 => eprintln!("Usage: savesplit <KB>"),
         Command::SaveSplit(args) => match args[0].parse::<usize>() {
-            Ok(kb) if kb > 0 => ctx.save_split(kb),
-            _ => eprintln!("Usage: savesplit <KB> (must be a positive integer)"),
+            // 64 GiB — разумный потолок.
+            Ok(kb) if (1..=64 * 1024 * 1024).contains(&kb) => ctx.save_split(kb),
+            _ => eprintln!("Usage: savesplit <KB> (1 ..= 67108864)"),
         },
         Command::Stats => ctx.stats(),
         Command::Help => print_help(),
